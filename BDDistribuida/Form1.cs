@@ -92,6 +92,18 @@ namespace BDDistribuida
                 new Catalogo(10, "Alumno1b","L9", "Replica")
         };
 
+
+        private Dictionary<string, List<string>> estructuraLogica = new Dictionary<string, List<string>>
+        {
+            { "Alumno", new List<string> { "Alumno1a", "Alumno1b", "Alumno2a", "Alumno2b" } },
+            { "Carrera", new List<string> { "Carrera" } },
+            { "Materia", new List<string> { "Materia" } },
+            { "Maestro", new List<string> { "Maestro" } },
+            { "Califica", new List<string> { "Califica" } }
+        };
+
+
+
         //crear distancias
         Dictionary<string, Dictionary<string, int>> distancias = new Dictionary<string, Dictionary<string, int>>()
         {
@@ -123,161 +135,89 @@ namespace BDDistribuida
 
         private void btnEjecutar_Click(object sender, EventArgs e)
         {
-            var selected = cmbLocalidad.SelectedItem;
+            // 1. Validaciones iniciales
+            if (cmbLocalidad.SelectedItem == null) { MessageBox.Show("Seleccione una localidad"); return; }
+            string localidadActual = cmbLocalidad.SelectedItem.ToString()!;
 
-            if (selected == null)
-            {
-                MessageBox.Show("Seleccione una localidad");
-                return;
-            }
-
-            string localidadActual = selected.ToString()!;
-
-            //tablas y campos
             var tablasSeleccionadas = chkTablas.CheckedItems.Cast<string>().ToList();
-            if (tablasSeleccionadas.Count == 0)
-            {
-                MessageBox.Show("Seleccione al menos una tabla");
-                return;
-            }
-
             var camposSeleccionados = chkCampos.CheckedItems.Cast<string>().ToList();
-            if (camposSeleccionados.Count == 0)
+
+            if (tablasSeleccionadas.Count == 0 || camposSeleccionados.Count == 0)
             {
-                MessageBox.Show("Seleccione al menos un campo");
+                MessageBox.Show("Seleccione tablas y campos");
                 return;
             }
 
+            // 2. Preparación de condiciones
             string campoCondicion = cmbCampoCondicion.SelectedItem?.ToString() ?? "";
-
-            string operador = cmbOperador.SelectedItem?.ToString() ?? "";
             string valor = txtValor.Text;
-            //saber si el usaruio quiere usar condición 
-            bool usarCondicion =
-                !string.IsNullOrEmpty(campoCondicion) &&
-                !string.IsNullOrEmpty(operador) &&
-                !string.IsNullOrEmpty(valor);
-            //validar que haya seleccionado al menos una tabla y un campo
-            if (usarCondicion)
-            {
-                if (operador != "=" &&
-                    operador != "<" &&
-                    operador != ">" &&
-                    operador != "<=" &&
-                    operador != ">=" &&
-                    operador != "<>")
-                {
-                    MessageBox.Show("Operador no soportado");
-                    return;
-                }
-            }
-            //localidad actual
-            if (cmbLocalidad.SelectedItem == null)
-            {
-                MessageBox.Show("Seleccione una localidad");
-                return;
-            }
+            bool usarCondicion = !string.IsNullOrEmpty(campoCondicion) && !string.IsNullOrEmpty(valor);
 
-            if (!distancias.ContainsKey(localidadActual))
-            {
-                MessageBox.Show("Localidad no definida en distancias");
-                return;
-            }
-
-
-
-            //buscar fragmentos por campos 
+            // 3. Motor de Consulta (Transparencia de Fragmentación)
             var fragmentosNecesarios = new List<Fragmento>();
-
-            foreach (var campo in camposSeleccionados)
+            foreach (var tabla in tablasSeleccionadas)
             {
-                var encontrados = fragmentos
-                    .Where(f =>
-                        f.Campos.Contains(campo) &&
-                        tablasSeleccionadas.Contains(f.TablaOriginal)
-                    )
-                    .ToList();
+                // Traemos todos los fragmentos físicos asociados a la tabla lógica
+                var fragsDeEstaTabla = fragmentos.Where(f => f.TablaOriginal == tabla).ToList();
 
-                fragmentosNecesarios.AddRange(encontrados);
-            }
-
-            if (usarCondicion)
-            {
-                var encontradosCondicion = fragmentos
-                    .Where(f =>
-                        f.Campos.Contains(campoCondicion) &&
-                        tablasSeleccionadas.Contains(f.TablaOriginal)
-                    )
-                    .ToList();
-
-                fragmentosNecesarios.AddRange(encontradosCondicion);
-            }
-
-            //quitar duplicados de la lista de fragmentos necesarios
-            fragmentosNecesarios = fragmentosNecesarios
-                .GroupBy(f => f.Nombre)
-                .Select(g => g.First())
-                .ToList();
-            // Aplicar condición
-            if (campoCondicion == "Titulo")
-            {
-                if (valor == "Ing" || valor == "Lic")
+                // Aplicamos el motor de inferencia: descartamos fragmentos incompatibles con la condición
+                if (usarCondicion)
                 {
-                    fragmentosNecesarios = fragmentosNecesarios
-                        .Where(f => f.Condicion == valor)
-                        .ToList();
+                    fragsDeEstaTabla = fragsDeEstaTabla.Where(f =>
+                        string.IsNullOrEmpty(f.Condicion) || f.Condicion == valor
+                    ).ToList();
                 }
+                fragmentosNecesarios.AddRange(fragsDeEstaTabla);
+            }
+            fragmentosNecesarios = fragmentosNecesarios.GroupBy(f => f.Nombre).Select(g => g.First()).ToList();
+
+            // 4. Filtrar disponibilidad según localidades marcadas
+            var localidadesActivas = chkLocalidades.CheckedItems.Cast<string>().ToList();
+            var catalogoActivo = catalogo.Where(c => localidadesActivas.Contains(c.Nodo)).ToList();
+
+            // 5. Validación de integridad: ¿Tenemos todos los fragmentos necesarios?
+            var nombresRequeridos = fragmentosNecesarios.Select(f => f.Nombre).ToList();
+            if (!nombresRequeridos.All(n => catalogoActivo.Any(c => c.FragmentoNombre == n)))
+            {
+                txtResultado.Text = "Consulta fallida: Algunos fragmentos no están disponibles en las localidades activas.";
+                return;
             }
 
+            // 6. Algoritmo de Sintonía (Optimización por costo total)
+            var mejorNodo = localidadesActivas.OrderBy(nodo => {
+                int costoTotal = 0;
+                foreach (var frag in fragmentosNecesarios)
+                {
+                    var ubicaciones = catalogoActivo.Where(c => c.FragmentoNombre == frag.Nombre);
+                    costoTotal += ubicaciones.Min(u => distancias[localidadActual][u.Nodo]);
+                }
+                return costoTotal;
+            }).First();
 
-
-            //  Filtrar localidades activas
-            var localidadesActivas = chkLocalidades.CheckedItems.Cast<string>().ToList();
-
-            var catalogoActivo = catalogo
-                .Where(c => localidadesActivas.Contains(c.Nodo))
-                .ToList();
-
-            //  Obtener resultado
+            // 7. Generar resultado final
             var resultadoFinal = new List<Catalogo>();
-
             foreach (var frag in fragmentosNecesarios)
             {
-                var opciones = catalogoActivo
-                    .Where(c => c.FragmentoNombre == frag.Nombre)
-                    .ToList();
-
-                if (opciones.Count == 0) 
-                {
-                    txtResultado.Clear();
-                    txtResultado.Text = "No se puede realizar la consulta";
-                    return;
-
-                }
-
-                var mejor = opciones
-                    .OrderBy(c => distancias[localidadActual][c.Nodo])
-                    .First();
-
-                resultadoFinal.Add(mejor);
+                var mejorUbicacion = catalogoActivo.Where(c => c.FragmentoNombre == frag.Nombre)
+                                                   .OrderBy(c => distancias[localidadActual][c.Nodo])
+                                                   .First();
+                resultadoFinal.Add(mejorUbicacion);
             }
 
-            //  Mostrar resultado
+            // 8. Visualización y Grafo
             txtResultado.Clear();
-
-            if (resultadoFinal.Count == 0)
-            {
-                txtResultado.Text = "No se puede realizar la consulta";
-                return;
-            }
-
-            txtResultado.AppendText("Sí se puede realizar la consulta\n\n");
-            txtResultado.AppendText("Localidad\tTabla\n");
-
+            txtResultado.AppendText("Sí se puede realizar la consulta\n\nLocalidad\tTabla\n");
             foreach (var r in resultadoFinal)
             {
-                txtResultado.AppendText($"{r.Nodo}\t{r.FragmentoNombre}\n");
+                txtResultado.AppendText($"{r.Nodo}\t\t{r.FragmentoNombre}\n");
             }
+
+            // Integración con el Grafo
+            List<string> nodosGanadores = resultadoFinal.Select(r => r.Nodo).Distinct().ToList();
+            Gráfo f = new Gráfo();
+            f.ResaltarNodos(nodosGanadores);
+            f.Show();
+
 
 
         }
@@ -290,132 +230,44 @@ namespace BDDistribuida
 
         private void chkTablas_ItemCheck(object sender, ItemCheckEventArgs e)
         {
-            chkCampos.Items.Clear();
+            // Usamos BeginInvoke para asegurar que la UI se actualice después 
+            // de que el estado del CheckBox haya cambiado realmente.
+            this.BeginInvoke(new Action(() => {
 
-            // Obtener tablas seleccionadas
-            var tablas = chkTablas.CheckedItems.Cast<string>().ToList();
+                // 1. Limpiamos las listas de campos
+                chkCampos.Items.Clear();
+                cmbCampoCondicion.Items.Clear();
 
+                // 2. Usamos un HashSet para recolectar campos únicos sin esfuerzo
+                // El HashSet evita automáticamente que se agreguen duplicados.
+                var listaCamposUnicos = new HashSet<string>();
 
-            string tablaActual = chkTablas.Items[e.Index].ToString() ?? "";
-            if (e.NewValue == CheckState.Checked)
-            {
-                tablas.Add(tablaActual);
-            }
-            else
-            {
-                tablas.Remove(tablaActual);
-            }
-
-            // Agregar campos según tablas
-            foreach (var tabla in tablas)
-            {
-                if (tabla == "Alumno")
+                // 3. Iteramos solo sobre las tablas que quedaron MARCADAS
+                foreach (var tabla in chkTablas.CheckedItems)
                 {
-                    chkCampos.Items.Add("NoCtrl");
-                    if (!chkCampos.Items.Contains("Titulo"))
-                    {
-                        chkCampos.Items.Add("Titulo");
-                    }
+                    string nombreTabla = tabla.ToString();
 
-                    if (!cmbCampoCondicion.Items.Contains("Titulo"))
-                    {
-                        cmbCampoCondicion.Items.Add("Titulo");
-                    }
-                    if (!chkCampos.Items.Contains("Nom"))
-                    {
-                        chkCampos.Items.Add("Nom");
-                    }
-                    if (!cmbCampoCondicion.Items.Contains("Nom"))
-                    {
-                        cmbCampoCondicion.Items.Add("Nom");
-                    }
-                    if (!chkCampos.Items.Contains("Ap"))
-                    {
-                        chkCampos.Items.Add("Ap");
-                    }
-                    if (!cmbCampoCondicion.Items.Contains("Ap"))
-                    {
-                        cmbCampoCondicion.Items.Add("Ap");
-                    }
-                    if (!chkCampos.Items.Contains("Am"))
-                    {
-                        chkCampos.Items.Add("Am");
-                    }
-                    if (!cmbCampoCondicion.Items.Contains("Am"))
-                    {
-                        cmbCampoCondicion.Items.Add("Am");
-                    }
-                    if (!chkCampos.Items.Contains("Dom"))
-                    {
-                        chkCampos.Items.Add("Dom");
-                    }
-                    if (!cmbCampoCondicion.Items.Contains("Dom"))
-                    {
-                        cmbCampoCondicion.Items.Add("Dom");
-                    }
-                    if (!chkCampos.Items.Contains("Tel"))
-                    {
-                        chkCampos.Items.Add("Tel");
-                    }
-                    if (!cmbCampoCondicion.Items.Contains("Tel"))
-                    {
-                        cmbCampoCondicion.Items.Add("Tel");
-                    }
-                    if (!chkCampos.Items.Contains("Cvecarr"))
-                    {
-                        chkCampos.Items.Add("Cvecarr");
-                    }
-                    if (!cmbCampoCondicion.Items.Contains("Cvecarr"))
-                    {
-                        cmbCampoCondicion.Items.Add("Cvecarr");
-                    }
-                    if (!chkCampos.Items.Contains("Sem"))
-                    {
-                        chkCampos.Items.Add("Sem");
-                    }
-                    if (!cmbCampoCondicion.Items.Contains("Sem"))
-                    {
-                        cmbCampoCondicion.Items.Add("Sem");
-                    }
-                    if (!chkCampos.Items.Contains("Prom"))
-                    {
-                        chkCampos.Items.Add("Prom");
-                    }
-                    if (!cmbCampoCondicion.Items.Contains("Prom"))
-                    {
-                        cmbCampoCondicion.Items.Add("Prom");
-                    }
-                    if (!chkCampos.Items.Contains("Titulo"))
-                    {
-                        chkCampos.Items.Add("Titulo");
-                    }
-                    if (!cmbCampoCondicion.Items.Contains("Titulo"))
-                    {
-                        cmbCampoCondicion.Items.Add("Titulo");
-                    }
+                    // Buscamos los fragmentos de esa tabla lógica
+                    // Esto asume que tienes una lista global llamada 'fragmentos'
+                    var frags = fragmentos.Where(f => f.TablaOriginal == nombreTabla).ToList();
 
-
+                    foreach (var f in frags)
+                    {
+                        foreach (var campo in f.Campos)
+                        {
+                            listaCamposUnicos.Add(campo);
+                        }
+                    }
                 }
 
-                if (tabla == "Carrera")
+                // 4. Llenamos los controles con los campos únicos encontrados
+                foreach (var campo in listaCamposUnicos)
                 {
-                    chkCampos.Items.Add("Nomcarr");
+                    chkCampos.Items.Add(campo);
+                    cmbCampoCondicion.Items.Add(campo);
                 }
+            }));
 
-                if (tabla == "Materia")
-                {
-                    chkCampos.Items.Add("Nommat");
-                    chkCampos.Items.Add("Creditos");
-                }
-
-                if (tabla == "Maestro")
-                {
-                    chkCampos.Items.Add("Nommaestro");
-                    chkCampos.Items.Add("Apmaestro");
-                    chkCampos.Items.Add("Ammaestro");
-                    chkCampos.Items.Add("Grado");
-                }
-            }
         }
 
         private void chkTablas_SelectedIndexChanged(object sender, EventArgs e)

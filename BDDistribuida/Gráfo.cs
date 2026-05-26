@@ -11,6 +11,7 @@ namespace BDDistribuida
 {
     public partial class Gráfo : Form
     {
+
         public Gráfo()
         {
             InitializeComponent();
@@ -58,6 +59,26 @@ namespace BDDistribuida
 
 
             g.DrawLine(p, p1, p2);
+        }
+
+
+
+        public void ResaltarNodos(List<string> nombresNodos)
+        {
+            foreach (Control c in this.Controls)
+            {
+                
+                if (c is TextBox)
+                {
+                    // Asumiendo que el texto dentro del cuadro es "L1", "L2", etc.
+                    if (nombresNodos.Contains(c.Text))
+                        c.BackColor = Color.LightGreen; // Nodo seleccionado para la consulta
+                    else
+                        c.BackColor = Color.LightGray;  // Nodo inactivo
+                }
+
+                c.Enabled = true;
+            }
         }
 
         private void textBox5_TextChanged(object sender, EventArgs e)
