@@ -7,13 +7,14 @@ namespace BDDistribuida
             InitializeComponent();
         }
         //fragmentos de código para cargar localidades, tablas, campos, etc. en los controles correspondientes
+        //los frafmentos representan cada tabla original
         List<Fragmento> fragmentos = new List<Fragmento>()
         {
             new Fragmento(
                 "Alumno",
-                "Alumno1a",
-                new List<string>{"NoCtrl","Nom","Ap","Am","Dom","Tel"},
-                "Lic",
+                "Alumno1a", //
+                new List<string>{"NoCtrl","Nom","Ap","Am","Dom","Tel"}, //fragmento vertical
+                "Lic", //fragmento horizontal
                 "Vertical",
                 "NoCtrl"
             ),
@@ -80,7 +81,7 @@ namespace BDDistribuida
         //catalogo 
         List<Catalogo> catalogo = new List<Catalogo>()
         {
-                new Catalogo(1, "Alumno1a","L1", "Primario"),
+                new Catalogo(1, "Alumno1a","L1", "Primario"), //fragmento, donde se encuentra, tipo de nodo (primario o réplica)
                 new Catalogo(2, "Alumno1b","L2", "Primario"),
                 new Catalogo(3,"Alumno2a","L3", "Primario"),
                 new Catalogo(4,"Alumno2b","L5", "Primario"),
@@ -88,8 +89,8 @@ namespace BDDistribuida
                 new Catalogo(6,"Materia","L7", "Primario"),
                 new Catalogo(7,"Maestro","L3", "Primario"),
                 new Catalogo(8,"Maestro","L4", "Replica"),
-                new Catalogo(9,"Alumno1a","L6", "Replica"),
-                new Catalogo(10, "Alumno1b","L9", "Replica")
+                new Catalogo(9,"Alumno1a","L6", "Replica"), //transparencia y repetición de fragmentos
+                new Catalogo(10, "Alumno1b","L9", "Replica") //transparencia y repetición de fragmentos
         };
 
 
@@ -142,6 +143,8 @@ namespace BDDistribuida
             var tablasSeleccionadas = chkTablas.CheckedItems.Cast<string>().ToList();
             var camposSeleccionados = chkCampos.CheckedItems.Cast<string>().ToList();
 
+            var nombresRequeridos = new HashSet<string>();
+
             if (tablasSeleccionadas.Count == 0 || camposSeleccionados.Count == 0)
             {
                 MessageBox.Show("Seleccione tablas y campos");
@@ -158,7 +161,7 @@ namespace BDDistribuida
             foreach (var tabla in tablasSeleccionadas)
             {
                 // Traemos todos los fragmentos físicos asociados a la tabla lógica
-                var fragsDeEstaTabla = fragmentos.Where(f => f.TablaOriginal == tabla).ToList();
+                var fragsDeEstaTabla = fragmentos.Where(f => f.TablaOriginal == tabla).ToList(); //optimización de la consulta. busca fragemtos necesarios y evita todos
 
                 // Aplicamos el motor de inferencia: descartamos fragmentos incompatibles con la condición
                 if (usarCondicion)
@@ -167,28 +170,71 @@ namespace BDDistribuida
                         string.IsNullOrEmpty(f.Condicion) || f.Condicion == valor
                     ).ToList();
                 }
-                fragmentosNecesarios.AddRange(fragsDeEstaTabla);
+                fragmentosNecesarios.AddRange(fragsDeEstaTabla); //fragmentos necesarios para esta tabla, considerando la condición. reune los fragmentos necesarios de todas las tablas seleccionadas
             }
             fragmentosNecesarios = fragmentosNecesarios.GroupBy(f => f.Nombre).Select(g => g.First()).ToList();
+            nombresRequeridos.UnionWith(fragmentosNecesarios.Select(f => f.Nombre));
 
             // 4. Filtrar disponibilidad según localidades marcadas
-            var localidadesActivas = chkLocalidades.CheckedItems.Cast<string>().ToList();
+            var localidadesActivas = chkLocalidades.CheckedItems.Cast<string>().ToList(); //disponiblidad de localidades marcadas. obtenemos las localidades activas según el usuario
             var catalogoActivo = catalogo.Where(c => localidadesActivas.Contains(c.Nodo)).ToList();
 
             // 5. Validación de integridad: ¿Tenemos todos los fragmentos necesarios?
-            var nombresRequeridos = fragmentosNecesarios.Select(f => f.Nombre).ToList();
-            if (!nombresRequeridos.All(n => catalogoActivo.Any(c => c.FragmentoNombre == n)))
+            var faltantes = nombresRequeridos
+                .Where(n => !catalogoActivo.Any(c => c.FragmentoNombre == n))
+                .ToList();
+
+            if(faltantes.Count > 0)
             {
-                txtResultado.Text = "Consulta fallida: Algunos fragmentos no están disponibles en las localidades activas.";
+                txtResultado.Text = ("No se puede realizar la consulta\n\n");    
+                txtResultado.AppendText("Faltan fragmentos necesarios:\n");
+                
+                foreach (var item in faltantes)
+                {
+                    txtResultado.AppendText($"- {item}\n");
+                }
+
+                txtResultado.AppendText("\nActive alguna de estas localidades:\n");
+
+                foreach (var item in faltantes)
+                {
+                    var ubicaciones = catalogo
+                        .Where(c => c.FragmentoNombre == item)
+                        .Select(c => c.Nodo);
+
+                    txtResultado.AppendText($"{item}: { string.Join(", ", ubicaciones)}\n");
+                }
+
+                return;
+            }
+            //validar localidades activas
+            if (!localidadesActivas.Contains(localidadActual))
+            {
+                txtResultado.Clear();
+
+                txtResultado.AppendText("La localidad actual no está activa. Active la localidad para ejecutar la consulta.\n");
+
+                txtResultado.AppendText($"Localidad actual: ({localidadActual}) está desactivada.\n");
+
+                txtResultado.AppendText($"Active alguna de estas localidades: ({localidadActual}). \n");
+
                 return;
             }
 
             // 6. Algoritmo de Sintonía (Optimización por costo total)
-            var mejorNodo = localidadesActivas.OrderBy(nodo => {
-                int costoTotal = 0;
+            var mejorNodo = localidadesActivas
+            .OrderBy(nodo =>
+            {
+                int costoTotal = 0;            
+
                 foreach (var frag in fragmentosNecesarios)
                 {
                     var ubicaciones = catalogoActivo.Where(c => c.FragmentoNombre == frag.Nombre);
+                    //controlar excepcion
+                    if (!ubicaciones.Any())
+                    {
+                        throw new InvalidOperationException($"No hay ubicaciones activas para el fragmento '{frag.Nombre}'");
+                    }
                     costoTotal += ubicaciones.Min(u => distancias[localidadActual][u.Nodo]);
                 }
                 return costoTotal;
@@ -199,17 +245,39 @@ namespace BDDistribuida
             foreach (var frag in fragmentosNecesarios)
             {
                 var mejorUbicacion = catalogoActivo.Where(c => c.FragmentoNombre == frag.Nombre)
-                                                   .OrderBy(c => distancias[localidadActual][c.Nodo])
-                                                   .First();
+                                                   .OrderBy(c => distancias[localidadActual][c.Nodo]) //sintonía para cada fragmento
+                                                   .First(); //seleccionamos la ubicación más cercana para cada fragmento
                 resultadoFinal.Add(mejorUbicacion);
             }
 
             // 8. Visualización y Grafo
             txtResultado.Clear();
-            txtResultado.AppendText("Sí se puede realizar la consulta\n\nLocalidad\tTabla\n");
-            foreach (var r in resultadoFinal)
+            txtResultado.AppendText("SÍ se puede realizar la consulta\n\n");
+            txtResultado.AppendText($"Nodo óptimo: {mejorNodo}\n\n");
+            txtResultado.AppendText(
+                " - Se encontraron los fragmentos necesarios en las localidades activas, y la localidad actual está activa.\n");
+            txtResultado.AppendText(
+                " - El algoritmo de sintonía seleccionó las ubicaciones óptimas para cada fragmento, minimizando el costo total de acceso. \n");
+            txtResultado.AppendText(
+                " - Se encontró la ruta de menor costo.\n");
+            txtResultado.AppendText(
+                " - Hay tolerancia a fallos mediante replicas.\n");
+
+            txtResultado.AppendText("Conceptos aplicados:\n");
+
+            txtResultado.AppendText("- Fragmentación\n");
+            txtResultado.AppendText("- Transparencia\n");
+            txtResultado.AppendText("- Disponibilidad\n");
+            txtResultado.AppendText("- Replicación\n");
+            txtResultado.AppendText("- Sintonía\n\n");
+
+            txtResultado.AppendText("\nExplicación detallada:\n");
+            foreach (var resultado in resultadoFinal)
             {
-                txtResultado.AppendText($"{r.Nodo}\t\t{r.FragmentoNombre}\n");
+                int costo = distancias[localidadActual][resultado.Nodo];
+
+                txtResultado.AppendText(
+                    $"{resultado.FragmentoNombre} se obtuvo desde {resultado.Nodo} (costo {costo})\n");
             }
 
             // Integración con el Grafo
@@ -245,7 +313,7 @@ namespace BDDistribuida
                 // 3. Iteramos solo sobre las tablas que quedaron MARCADAS
                 foreach (var tabla in chkTablas.CheckedItems)
                 {
-                    string nombreTabla = tabla.ToString();
+                    string nombreTabla = tabla.ToString()!;
 
                     // Buscamos los fragmentos de esa tabla lógica
                     // Esto asume que tienes una lista global llamada 'fragmentos'

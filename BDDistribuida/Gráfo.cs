@@ -15,7 +15,7 @@ namespace BDDistribuida
         public Gráfo()
         {
             InitializeComponent();
-            this.Paint += new System.Windows.Forms.PaintEventHandler(this.Gráfo_Paint);
+            Paint += Gráfo_Paint;
         }
 
         private void Regresar_Click(object sender, EventArgs e)
@@ -28,7 +28,7 @@ namespace BDDistribuida
 
         }
 
-        private void Gráfo_Paint(object sender, PaintEventArgs e)
+        private void Gráfo_Paint(object? sender, PaintEventArgs e)
         {
             using (Pen pluma = new Pen(Color.DarkSlateGray, 3))
             {
@@ -67,12 +67,12 @@ namespace BDDistribuida
         {
             foreach (Control c in this.Controls)
             {
-                
-                if (c is TextBox)
+
+                if (c.Name.StartsWith("Localidad"))
                 {
                     // Asumiendo que el texto dentro del cuadro es "L1", "L2", etc.
                     if (nombresNodos.Contains(c.Text))
-                        c.BackColor = Color.LightGreen; // Nodo seleccionado para la consulta
+                        c.BackColor = Color.LightGreen; // Nodo activo
                     else
                         c.BackColor = Color.LightGray;  // Nodo inactivo
                 }
@@ -82,6 +82,11 @@ namespace BDDistribuida
         }
 
         private void textBox5_TextChanged(object sender, EventArgs e)
+        {
+
+        }
+
+        private void textBox7_TextChanged(object sender, EventArgs e)
         {
 
         }

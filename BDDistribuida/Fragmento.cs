@@ -18,12 +18,17 @@ namespace BDDistribuida
         public Fragmento(string tablaOriginal, string nombre, List<string> campos, string condicion, string tipoFragmentacion, string clavePrimaria)
         {
             TablaOriginal = tablaOriginal;
-            Nombre = nombre;
-            Campos = campos;
-            Condicion = condicion;
-            TipoFragmentacion = tipoFragmentacion;
+            Nombre = nombre; //el nombre del fragmento, por ejemplo: "Fragmento1"
+            Campos = campos; // los campos que contiene el fragmento, por ejemplo: ["id", "nombre"] para un fragmento vertical
+            Condicion = condicion; // la condición de fragmentación, por ejemplo: "id < 1000" para un fragmento horizontal
+            TipoFragmentacion = tipoFragmentacion; // el tipo de fragmentación, por ejemplo: "horizontal", "vertical" o "mixta"
             ClavePrimaria = clavePrimaria;
 
+        }
+
+        public string Descripcion()
+        {
+            return $"({Nombre}) ({TipoFragmentacion})";
         }
     }
 }

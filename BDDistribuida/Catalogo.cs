@@ -4,6 +4,7 @@ using System.Text;
 
 namespace BDDistribuida
 {
+    //clase catalogo. qué framento, donde se encuentra, a qué tabla corresponde, etc.
     internal class Catalogo
     {
         public int Id { get; set; } 
@@ -14,10 +15,10 @@ namespace BDDistribuida
 
         public Catalogo(int id, string fragmentoNombre, string nodo, string tipo)
         {
-            Id = id;
-            FragmentoNombre = fragmentoNombre;
-            Nodo = nodo;
-            Tipo = tipo;
+            Id = id; // identificador único del fragmento en el catálogo
+            FragmentoNombre = fragmentoNombre; // a qué fragmento corresponde según su nombre
+            Nodo = nodo; // en qué nodo se encuentra el fragmento
+            Tipo = tipo; // primario o replicado
         }
     }
 }
